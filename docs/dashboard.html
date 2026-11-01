@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="el" data-page="dashboard">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Ασφάλεια: μόνο δικά μας αρχεία + το συγκεκριμένο Chart.js, και επικοινωνία μόνο με το Apps Script. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'; object-src 'none'; manifest-src 'self'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#06070c">
+  <title>Dashboard αποτελεσμάτων</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="js/theme.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js" integrity="sha384-Emf5ZVIUiarAdhkgtqK+5/Z5qIvM6QoVrS+qAVtfyZVuD5lIHrac0me485+Antp0" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+  <script src="config.js" defer></script>
+  <script src="js/common.js" defer></script>
+  <script src="js/dashboard.js" defer></script>
+</head>
+<body class="dash">
+  <canvas id="scene" class="scene" aria-hidden="true"></canvas>
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- ── ΣΥΝΔΕΣΗ ── -->
+  <main id="login" class="login">
+    <div class="login-card glass" data-tilt>
+      <div class="kpi-glare" aria-hidden="true"></div>
+      <div class="login-lock" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" focusable="false"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/><path d="M12 15v2"/></svg>
+      </div>
+      <h1 class="login-title">Dashboard αποτελεσμάτων</h1>
+      <p class="login-sub">Μόνο για διαχειριστές. Γράψτε τον κωδικό <code>ADMIN_KEY</code> που ορίσατε στο Apps Script.</p>
+
+      <div id="login-config-warning" class="notice notice-warn" role="note" hidden>
+        Λείπει το URL του Apps Script από το <code>docs/config.js</code>.
+      </div>
+
+      <form id="login-form" class="login-form" novalidate>
+        <!-- Κρυφό username: βοηθά τους password managers να αποθηκεύσουν σωστά τον κωδικό. -->
+        <input class="sr-only" type="text" name="username" value="admin" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
+        <label class="field-label" for="admin-key">Κωδικός διαχειριστή</label>
+        <div class="key-field">
+          <input id="admin-key" class="field-input" type="password" name="password" autocomplete="current-password" spellcheck="false" autocapitalize="off" maxlength="256" required placeholder="Επικολλήστε τον κωδικό">
+          <button class="icon-btn sm key-toggle" id="toggle-key" type="button" aria-label="Εμφάνιση κωδικού" aria-pressed="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <p id="login-error" class="login-error" role="alert" hidden></p>
+        <button id="login-btn" class="btn btn-primary btn-lg btn-block" type="submit">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Είσοδος</span>
+        </button>
+      </form>
+      <p class="login-foot">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span>Ο κωδικός κρατιέται μόνο σε αυτή την καρτέλα και σβήνεται όταν την κλείσετε. Αυτόματη αποσύνδεση μετά από 20 λεπτά αδράνειας.</span>
+      </p>
+    </div>
+  </main>
+
+  <!-- ── DASHBOARD ── -->
+  <div id="app" class="app" hidden>
+    <header class="topbar is-solid">
+      <div class="topbar-inner wide">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">E.form <span class="brand-tag">Dashboard</span></span>
+        </div>
+        <p class="updated" id="updated-at" aria-live="polite"></p>
+        <div class="toolbar" role="toolbar" aria-label="Ενέργειες">
+          <button class="icon-btn live-btn" id="auto-btn" type="button" aria-pressed="false" aria-label="Αυτόματη ανανέωση">
+            <span class="live-dot" aria-hidden="true"></span><span class="live-text">Live</span>
+          </button>
+          <button class="icon-btn" id="refresh-btn" type="button" aria-label="Ανανέωση" title="Ανανέωση">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-sm" id="export-btn" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+            <span>Εξαγωγή CSV</span>
+          </button>
+          <button class="icon-btn" id="theme-toggle" type="button" aria-label="Αλλαγή θέματος"></button>
+          <button class="icon-btn" id="logout-btn" type="button" aria-label="Αποσύνδεση" title="Αποσύνδεση">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="dash-main">
+      <div class="dash-head">
+        <div>
+          <h1 class="dash-title">Αποτελέσματα</h1>
+          <p class="dash-sub">Όλα τα στοιχεία ενημερώνονται με βάση το διάστημα που επιλέγετε.</p>
+        </div>
+        <div class="segmented" id="range" role="group" aria-label="Χρονικό διάστημα">
+          <span class="seg-thumb" aria-hidden="true"></span>
+          <button type="button" data-range="all" aria-pressed="true">Όλες</button>
+          <button type="button" data-range="today" aria-pressed="false">Σήμερα</button>
+          <button type="button" data-range="7d" aria-pressed="false">7 ημέρες</button>
+          <button type="button" data-range="30d" aria-pressed="false">30 ημέρες</button>
+        </div>
+      </div>
+
+      <section class="kpis" id="kpis" aria-label="Βασικοί δείκτες"></section>
+      <section class="card glass timeline-card reveal" id="timeline-card" aria-label="Απαντήσεις στον χρόνο"></section>
+      <section class="results-grid" id="questions-grid" aria-label="Αποτελέσματα ανά ερώτηση"></section>
+      <section class="card glass reveal" id="responses-card" aria-label="Όλες οι απαντήσεις"></section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>
+        <span>Τα δεδομένα κρατιούνται μόνο στη μνήμη αυτής της καρτέλας — δεν αποθηκεύονται στον browser.</span>
+      </p>
+    </footer>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <noscript>
+    <div class="notice notice-warn noscript">Το dashboard χρειάζεται JavaScript.</div>
+  </noscript>
+</body>
+</html>

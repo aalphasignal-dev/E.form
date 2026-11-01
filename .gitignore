@@ -1,0 +1,15 @@
+# Μυστικά — δεν ανεβαίνουν ΠΟΤΕ στο GitHub
+.env
+.env.*
+*.local.js
+*.secret.*
+.clasp.json
+.clasprc.json
+creds.json
+credentials.json
+
+# Τοπικά αρχεία
+node_modules/
+.DS_Store
+Thumbs.db
+*.log

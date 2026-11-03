@@ -37,7 +37,7 @@
 
   const state = {
     key: '', rows: [], extra: [], range: 'all', loading: false,
-    fetchedAt: null, autoTimer: 0, lastActivity: Date.now(), scene: null
+    fetchedAt: null, autoTimer: 0, lastActivity: Date.now()
   };
   const components = [];
 
@@ -308,7 +308,7 @@
 
   function chartBox(heightClass, label) {
     const canvas = h('canvas', { role: 'img', 'aria-label': label });
-    const empty = h('div', { class: 'chart-empty', hidden: true }, [icon('sparkle'), h('span', { text: 'Δεν υπάρχουν ακόμα απαντήσεις' })]);
+    const empty = h('div', { class: 'chart-empty', hidden: true }, [icon('info'), h('span', { text: 'Δεν υπάρχουν ακόμα απαντήσεις' })]);
     const box = h('div', { class: 'chart-box ' + heightClass + (hasChart ? '' : ' no-chart') }, [canvas, empty]);
     return { box, canvas, empty };
   }
@@ -318,9 +318,8 @@
   function kpiTile(opts) {
     const value = h('p', { class: 'kpi-value' + (opts.compact ? ' is-compact' : ''), text: '0' });
     const sub = h('p', { class: 'kpi-sub', text: '' });
-    const el = h('article', { class: 'kpi glass' + (opts.hero ? ' kpi-hero' : ''), 'data-tilt': '' }, [
-      h('div', { class: 'kpi-glare', 'aria-hidden': 'true' }),
-      h('div', { class: 'kpi-head' }, [h('span', { class: 'kpi-icon' }, icon(opts.icon)), h('h3', { class: 'kpi-label', text: opts.label })]),
+    const el = h('article', { class: 'kpi' + (opts.hero ? ' kpi-hero' : '') }, [
+      h('div', { class: 'kpi-head' }, [icon(opts.icon), h('h3', { class: 'kpi-label', text: opts.label })]),
       h('div', { class: 'kpi-body' }, [value, opts.suffix ? h('span', { class: 'kpi-suffix', text: opts.suffix }) : null]),
       sub
     ]);
@@ -452,7 +451,7 @@
     const insight = h('p', { class: 'card-insight', text: '' });
     const { box, canvas, empty } = chartBox('h-auto', q.label);
     const table = tableView(q.label, ['Επιλογή', 'Απαντήσεις', 'Ποσοστό']);
-    const card = h('article', { class: 'card glass q-result reveal' }, [head, insight, box, table.el]);
+    const card = h('article', { class: 'card q-result reveal' }, [head, insight, box, table.el]);
     els.grid.appendChild(card);
     const slot = chartSlot(canvas, barConfig);
 
@@ -487,21 +486,17 @@
 
   function buildRatingCard(q, index) {
     const { head, sub } = cardHead(q, index, 'Βαθμολογία');
-    const stars = q.min >= 1 && q.max - q.min + 1 <= 5;
     const avgValue = h('span', { class: 'score-value', text: '—' });
-    const fiveStars = () => Array.from({ length: 5 }, () => icon('star'));
-    const meter = h('span', { class: 'stars-meter', 'aria-hidden': 'true' }, [
-      h('span', { class: 'stars-base' }, fiveStars()),
-      h('span', { class: 'stars-clip' }, h('span', { class: 'stars-top' }, fiveStars()))
-    ]);
+    // Λεπτή μπάρα: γέμισμα = μέσος όρος πάνω στην κλίμακα, πάνω σε ανοιχτότερη απόχρωση του ίδιου χρώματος.
+    const meter = h('span', { class: 'meter', 'aria-hidden': 'true' }, h('span', { class: 'meter-fill' }));
     const scoreNote = h('span', { class: 'score-note', text: '' });
     const summary = h('div', { class: 'score' }, [
       h('div', { class: 'score-main' }, [avgValue, h('span', { class: 'score-max', text: '/ ' + q.max })]),
-      h('div', { class: 'score-side' }, [stars ? meter : null, scoreNote])
+      h('div', { class: 'score-side' }, [meter, scoreNote])
     ]);
     const { box, canvas, empty } = chartBox('h-rating', q.label);
     const table = tableView(q.label, ['Βαθμός', 'Απαντήσεις', 'Ποσοστό']);
-    const card = h('article', { class: 'card glass q-result reveal' }, [head, summary, box, table.el]);
+    const card = h('article', { class: 'card q-result reveal' }, [head, summary, box, table.el]);
     els.grid.appendChild(card);
     const slot = chartSlot(canvas, barConfig);
 
@@ -513,7 +508,7 @@
         for (let v = q.min; v <= q.max; v++) levels.push(v);
         const values = levels.map((lv) => nums.filter((x) => Math.round(x) === lv).length);
         const mean = n ? nums.reduce((a, b) => a + b, 0) / n : 0;
-        const label = (lv) => (stars ? lv + '★' : String(lv));
+        const label = (lv) => String(lv);
         const full = (lv) => lv + ' / ' + q.max + (q.labels[lv - q.min] ? ' — ' + q.labels[lv - q.min] : '');
         slot.set({
           labels: levels.map(label), fullLabels: levels.map(full), values, horizontal: false,
@@ -524,7 +519,7 @@
 
         if (n) window.EF.countUp(avgValue, mean, (x) => format.decimal(x));
         else { avgValue.textContent = '—'; avgValue.dataset.value = '0'; }
-        const fraction = n ? clamp((mean - q.min + (stars ? 1 : 0)) / (q.max - q.min + (stars ? 1 : 0)), 0, 1) : 0;
+        const fraction = n ? clamp((mean - q.min) / (q.max - q.min), 0, 1) : 0;
         meter.style.setProperty('--fill', (fraction * 100).toFixed(1) + '%');
         sub.textContent = format.number(n) + (n === 1 ? ' βαθμολογία' : ' βαθμολογίες');
 
@@ -550,7 +545,7 @@
     const tbody = h('tbody');
     const more = h('button', { class: 'btn btn-ghost btn-sm', type: 'button', hidden: true, text: 'Εμφάνιση περισσότερων' });
     const emptyNote = h('p', { class: 'list-empty', hidden: true, text: 'Δεν υπάρχουν απαντήσεις κειμένου.' });
-    const card = h('article', { class: 'card glass q-result is-wide reveal' }, [
+    const card = h('article', { class: 'card q-result is-wide reveal' }, [
       head,
       h('div', { class: 'search' }, [icon('search'), search]),
       h('div', { class: 'table-scroll' }, h('table', { class: 'data-table text-table' }, [
@@ -692,7 +687,6 @@
       else buildTextCard(q, i);
     });
     buildResponsesTable();
-    window.EF.tilt(els.app);
     window.EF.reveal(els.app.querySelectorAll('.reveal'));
   }
 
@@ -723,7 +717,6 @@
     els.login.hidden = true;
     els.app.hidden = false;
     document.documentElement.classList.add('is-authed');
-    if (state.scene) state.scene.setDim(0.32);
   }
 
   function setLoginBusy(busy) {
@@ -820,8 +813,12 @@
 
   function init() {
     window.EF.initThemeToggle(document.getElementById('theme-toggle'));
-    state.scene = window.EF.createScene(document.getElementById('scene'), { layout: 'center', dim: 0.9 });
-    window.EF.tilt(els.login);
+    document.title = 'Dashboard · ' + config.survey.brand;
+    document.querySelectorAll('[data-brand-name]').forEach((el) => { el.textContent = config.survey.brand; });
+    if (config.survey.logo) {
+      const mark = document.querySelector('#app .brand-mark');
+      if (mark) mark.replaceWith(h('img', { class: 'brand-logo', src: config.survey.logo, alt: '' }));
+    }
 
     if (!config.configured) els.loginWarn.hidden = false;
     if (!hasChart) console.warn('[E.form] Το Chart.js δεν φορτώθηκε — εμφανίζονται μόνο πίνακες.');

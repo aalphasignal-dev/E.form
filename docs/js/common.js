@@ -160,8 +160,6 @@
       return list;
     }, []);
 
-    if (problems.length) console.warn('[E.form] Προβλήματα στο config.js:\n• ' + problems.join('\n• '));
-
     const survey = Object.assign({
       brand: 'E.form',
       eyebrow: 'Ερωτηματολόγιο',
@@ -171,6 +169,12 @@
       successTitle: 'Ευχαριστούμε!',
       successText: 'Η απάντησή σας καταχωρήθηκε.'
     }, raw.survey && typeof raw.survey === 'object' ? raw.survey : {});
+
+    // Λογότυπο: μόνο τοπικό αρχείο μέσα στο docs/ (π.χ. 'assets/logo.svg'), για να ισχύει το αυστηρό CSP.
+    const logo = typeof survey.logo === 'string' ? survey.logo.trim() : '';
+    survey.logo = /^(?![/\\])(?!.*\.\.)[A-Za-z0-9_\-/.]+\.(svg|png|webp|jpe?g)$/i.test(logo) ? logo : '';
+    if (logo && !survey.logo) problems.push('survey.logo: δεκτό μόνο τοπικό αρχείο εικόνας, π.χ. assets/logo.svg');
+    if (problems.length) console.warn('[E.form] Προβλήματα στο config.js:\n• ' + problems.join('\n• '));
 
     const scriptUrl = typeof raw.scriptUrl === 'string' ? raw.scriptUrl.trim() : '';
     return deepFreeze({ scriptUrl, configured: SCRIPT_URL_RE.test(scriptUrl), survey, questions });
@@ -280,7 +284,7 @@
       button.setAttribute('aria-label', light ? 'Σκούρο θέμα' : 'Ανοιχτό θέμα');
       button.setAttribute('title', light ? 'Σκούρο θέμα' : 'Ανοιχτό θέμα');
       const meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute('content', light ? '#f4f5fa' : '#06070c');
+      if (meta) meta.setAttribute('content', light ? '#f7f6f2' : '#0f0f0e');
     };
     button.addEventListener('click', () => {
       const next = currentTheme() === 'light' ? 'dark' : 'light';
@@ -314,189 +318,7 @@
   window.addEventListener('resize', requestScrollUpdate, { passive: true });
   function onScroll(fn) { scrollSubscribers.add(fn); requestScrollUpdate(); return () => scrollSubscribers.delete(fn); }
 
-  // ─── 3D ΣΚΗΝΗ: σφαίρα από σωματίδια που αντιδρά σε scroll & ποντίκι ────
-
-  function createScene(canvas, options) {
-    const opts = Object.assign({ layout: 'hero', dim: 1 }, options || {});
-    const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-    if (!ctx) return null;
-
-    const small = Math.min(window.innerWidth, window.innerHeight) < 640;
-    const N = small ? 620 : 1150;
-    const RING = small ? 150 : 280;
-    const STARS = small ? 70 : 140;
-    const sphere = new Float32Array(N * 3);
-    const ring = new Float32Array(RING * 3);
-    const stars = new Float32Array(STARS * 4);
-    const golden = Math.PI * (3 - Math.sqrt(5));
-
-    for (let i = 0; i < N; i++) {
-      const y = 1 - (i / (N - 1)) * 2;
-      const r = Math.sqrt(1 - y * y);
-      const t = golden * i;
-      sphere[i * 3] = Math.cos(t) * r;
-      sphere[i * 3 + 1] = y;
-      sphere[i * 3 + 2] = Math.sin(t) * r;
-    }
-    for (let i = 0; i < RING; i++) {
-      const a = (i / RING) * Math.PI * 2;
-      const rr = 1.32 + Math.random() * 0.2;
-      ring[i * 3] = Math.cos(a) * rr;
-      ring[i * 3 + 1] = (Math.random() - 0.5) * 0.05;
-      ring[i * 3 + 2] = Math.sin(a) * rr;
-    }
-    for (let i = 0; i < STARS; i++) {
-      stars[i * 4] = Math.random();
-      stars[i * 4 + 1] = Math.random();
-      stars[i * 4 + 2] = 0.2 + Math.random() * 0.8; // βάθος
-      stars[i * 4 + 3] = Math.random() * Math.PI * 2; // φάση
-    }
-
-    const PALETTES = {
-      dark: { dots: ['#a78bfa', '#7c8cff', '#4f9dff', '#3fd0f0'], glow: 'rgba(110,110,255,0.20)', alpha: [0.16, 0.42, 0.95], star: '#c7d2fe', blend: 'lighter' },
-      light: { dots: ['#7457e6', '#4f63e8', '#2a78d6', '#0f9fc4'], glow: 'rgba(96,108,255,0.14)', alpha: [0.12, 0.32, 0.75], star: '#6366f1', blend: 'source-over' }
-    };
-
-    let w = 0; let hgt = 0; let dpr = 1;
-    let rot = 0.6; let px = 0; let py = 0; let tx = 0; let ty = 0;
-    let vel = 0; let lastY = window.scrollY; let running = false; let raf = 0;
-    let dim = opts.dim; let dimTarget = opts.dim; let time = 0;
-
-    function resize() {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = canvas.clientWidth; hgt = canvas.clientHeight;
-      canvas.width = Math.round(w * dpr); canvas.height = Math.round(hgt * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (!running) draw();
-    }
-
-    function draw() {
-      const pal = PALETTES[currentTheme()];
-      const p = opts.layout === 'hero' ? scroll.progress : 0;
-      const wide = w > 960;
-      ctx.clearRect(0, 0, w, hgt);
-      if (w === 0 || hgt === 0) return;
-
-      let R; let cx; let cy;
-      if (opts.layout === 'hero') {
-        R = Math.min(w, hgt) * (wide ? 0.35 : 0.37) * (1 + p * 0.4);
-        cx = wide ? w * (0.75 - p * 0.2) : w * 0.5;
-        cy = wide ? hgt * (0.52 - p * 0.08) : hgt * (0.27 - p * 0.05);
-      } else {
-        R = Math.min(w, hgt) * 0.42;
-        cx = w * 0.5; cy = hgt * 0.5;
-      }
-
-      // Απαλή λάμψη πίσω από τη σφαίρα.
-      const glow = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * 1.7);
-      glow.addColorStop(0, pal.glow);
-      glow.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.globalAlpha = dim;
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, w, hgt);
-
-      ctx.globalCompositeOperation = pal.blend;
-
-      // Αστέρια φόντου με parallax.
-      ctx.fillStyle = pal.star;
-      for (let i = 0; i < STARS; i++) {
-        const depth = stars[i * 4 + 2];
-        const sx = ((stars[i * 4] + px * 0.02 * depth) % 1 + 1) % 1 * w;
-        const sy = ((stars[i * 4 + 1] - scroll.y * 0.00008 * depth + py * 0.02 * depth) % 1 + 1) % 1 * hgt;
-        const twinkle = 0.35 + 0.65 * Math.abs(Math.sin(time * 0.6 + stars[i * 4 + 3]));
-        ctx.globalAlpha = dim * depth * twinkle * 0.55;
-        ctx.fillRect(sx, sy, depth * 1.6, depth * 1.6);
-      }
-
-      const ay = rot + px * 0.45;
-      const ax = -0.32 + py * 0.28 + p * 0.85;
-      const sinY = Math.sin(ay); const cosY = Math.cos(ay);
-      const sinX = Math.sin(ax); const cosX = Math.cos(ax);
-      const buckets = [];
-      for (let b = 0; b < 12; b++) buckets.push(new Path2D());
-
-      const plot = (x, y, z, colorIndex, sizeBoost) => {
-        const x1 = x * cosY + z * sinY;
-        const z1 = -x * sinY + z * cosY;
-        const y1 = y * cosX - z1 * sinX;
-        const z2 = y * sinX + z1 * cosX;
-        const f = 3.2 / (3.2 + z2);
-        const sx = cx + x1 * R * f;
-        const sy = cy + y1 * R * f;
-        const depth = clamp((1 - z2 / 1.8) / 2 + 0.25, 0, 1);
-        const level = depth < 0.42 ? 0 : depth < 0.68 ? 1 : 2;
-        const size = (0.55 + depth * 1.45) * sizeBoost * (small ? 0.9 : 1);
-        const path = buckets[colorIndex * 3 + level];
-        path.moveTo(sx + size, sy);
-        path.arc(sx, sy, size, 0, Math.PI * 2);
-      };
-
-      for (let i = 0; i < N; i++) {
-        const y = sphere[i * 3 + 1];
-        const colorIndex = Math.min(3, Math.floor(((y + 1) / 2) * 4));
-        plot(sphere[i * 3], y, sphere[i * 3 + 2], colorIndex, 1);
-      }
-
-      // Δακτύλιος σε κλίση, με δική του περιστροφή.
-      const tilt = 0.42; const st = Math.sin(tilt); const ct = Math.cos(tilt);
-      const spin = rot * 1.7; const ss = Math.sin(spin); const cs = Math.cos(spin);
-      for (let i = 0; i < RING; i++) {
-        const x0 = ring[i * 3] * cs - ring[i * 3 + 2] * ss;
-        const z0 = ring[i * 3] * ss + ring[i * 3 + 2] * cs;
-        const y0 = ring[i * 3 + 1];
-        plot(x0, y0 * ct - z0 * st, y0 * st + z0 * ct, i % 2 ? 3 : 2, 0.8);
-      }
-
-      for (let b = 0; b < 12; b++) {
-        ctx.globalAlpha = pal.alpha[b % 3] * dim;
-        ctx.fillStyle = pal.dots[Math.floor(b / 3)];
-        ctx.fill(buckets[b]);
-      }
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1;
-    }
-
-    function frame() {
-      if (!running) return;
-      const y = window.scrollY;
-      vel = vel * 0.88 + (y - lastY) * 0.12;
-      lastY = y;
-      time += 0.016;
-      rot += 0.0017 + Math.min(Math.abs(vel), 80) * 0.00016;
-      px += (tx - px) * 0.045;
-      py += (ty - py) * 0.045;
-      dim += (dimTarget - dim) * 0.06;
-      draw();
-      raf = window.requestAnimationFrame(frame);
-    }
-
-    function start() {
-      if (running || !motionOK() || document.hidden) return;
-      running = true;
-      lastY = window.scrollY;
-      raf = window.requestAnimationFrame(frame);
-    }
-    function stop() { running = false; window.cancelAnimationFrame(raf); }
-
-    window.addEventListener('pointermove', (e) => {
-      tx = (e.clientX / window.innerWidth) * 2 - 1;
-      ty = (e.clientY / window.innerHeight) * 2 - 1;
-    }, { passive: true });
-    window.addEventListener('resize', resize, { passive: true });
-    document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
-    reducedMotion.addEventListener('change', () => (motionOK() ? start() : (stop(), draw())));
-    window.addEventListener('eform:theme', () => { if (!running) draw(); });
-    onScroll(() => { if (!running) draw(); });
-
-    resize();
-    start();
-
-    return {
-      setDim(value) { dimTarget = value; if (!running) { dim = value; draw(); } }
-    };
-  }
-
-  // ─── ΕΜΦΑΝΙΣΗ ΣΤΟΙΧΕΙΩΝ ΜΕ 3D ΚΙΝΗΣΗ ΚΑΤΑ ΤΟ SCROLL ────────────────────
+  // ─── ΚΙΝΗΣΗ ΚΑΤΑ ΤΟ SCROLL ─────────────────────────────────────────────
 
   let revealObserver = null;
   function reveal(elements) {
@@ -519,50 +341,36 @@
   }
 
   /**
-   * «Τύμπανο» 3D: κάθε κάρτα γέρνει ανάλογα με την απόστασή της από το κέντρο
-   * της οθόνης, σαν να κυλάει πάνω σε κύλινδρο. Η κάρτα με εστίαση μένει ίσια.
+   * «Εστίαση»: σημειώνει ως ενεργό (.is-active) το στοιχείο που βρίσκεται πιο κοντά
+   * στο κέντρο της οθόνης. Το CSS κάνει τα υπόλοιπα να υποχωρούν διακριτικά.
    */
-  function depthScroll(selector) {
+  function focusScroll(selector) {
     if (!motionOK()) return;
-    const run = () => {
-      const vh = window.innerHeight;
-      const strength = window.innerWidth < 640 ? 0.55 : 1;
-      document.querySelectorAll(selector).forEach((el) => {
-        if (el.contains(document.activeElement) && document.activeElement !== document.body) {
-          el.style.setProperty('--rx', '0deg'); el.style.setProperty('--tz', '0px');
-          return;
-        }
-        const rect = el.getBoundingClientRect();
-        const d = clamp((rect.top + rect.height / 2 - vh / 2) / vh, -1.2, 1.2);
-        const ease = Math.sign(d) * Math.pow(Math.abs(d), 1.35);
-        el.style.setProperty('--rx', (ease * -16 * strength).toFixed(2) + 'deg');
-        el.style.setProperty('--tz', (-Math.abs(ease) * 140 * strength).toFixed(1) + 'px');
-      });
+    document.documentElement.classList.add('focus-on');
+    let current = null;
+    const setActive = (el) => {
+      if (el === current) return;
+      if (current) current.classList.remove('is-active');
+      if (el) el.classList.add('is-active');
+      current = el;
     };
-    onScroll(run);
-    document.addEventListener('focusin', run);
-    document.addEventListener('focusout', () => setTimeout(run, 0));
-  }
-
-  /** Κλίση 3D προς το ποντίκι για στοιχεία με [data-tilt]. */
-  function tilt(root) {
-    if (!motionOK() || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
-    (root || document).querySelectorAll('[data-tilt]').forEach((el) => {
-      if (el.dataset.tiltBound) return;
-      el.dataset.tiltBound = '1';
-      el.addEventListener('pointermove', (e) => {
+    onScroll(() => {
+      const vh = window.innerHeight;
+      let best = null;
+      let bestDist = Infinity;
+      document.querySelectorAll(selector).forEach((el) => {
+        if (el.offsetParent === null) return;
         const r = el.getBoundingClientRect();
-        const x = (e.clientX - r.left) / r.width - 0.5;
-        const y = (e.clientY - r.top) / r.height - 0.5;
-        el.style.setProperty('--tilt-x', (y * -7).toFixed(2) + 'deg');
-        el.style.setProperty('--tilt-y', (x * 9).toFixed(2) + 'deg');
-        el.style.setProperty('--glare-x', ((x + 0.5) * 100).toFixed(1) + '%');
-        el.style.setProperty('--glare-y', ((y + 0.5) * 100).toFixed(1) + '%');
+        if (r.bottom < 0 || r.top > vh) return;
+        const d = Math.abs(r.top + r.height / 2 - vh / 2);
+        if (d < bestDist) { bestDist = d; best = el; }
       });
-      el.addEventListener('pointerleave', () => {
-        el.style.setProperty('--tilt-x', '0deg');
-        el.style.setProperty('--tilt-y', '0deg');
-      });
+      setActive(best);
+    });
+    // Με το πληκτρολόγιο (Tab) η εστίαση ακολουθεί το πεδίο.
+    document.addEventListener('focusin', (e) => {
+      const el = e.target.closest && e.target.closest(selector);
+      if (el) setActive(el);
     });
   }
 
@@ -617,52 +425,12 @@
     });
   }
 
-  function confetti() {
-    if (!motionOK()) return;
-    const canvas = h('canvas', { class: 'confetti', 'aria-hidden': 'true' });
-    document.body.appendChild(canvas);
-    const ctx = canvas.getContext('2d');
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = window.innerWidth; const hh = window.innerHeight;
-    canvas.width = w * dpr; canvas.height = hh * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const colors = ['#8b7cff', '#4f8dff', '#2ec5e6', '#ffcf5a', '#ff7aa8', '#34d399'];
-    const parts = Array.from({ length: w < 640 ? 110 : 170 }, () => {
-      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
-      const speed = 7 + Math.random() * 9;
-      return {
-        x: w / 2 + (Math.random() - 0.5) * 120, y: hh * 0.42,
-        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-        r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3,
-        s: 5 + Math.random() * 6, c: colors[Math.floor(Math.random() * colors.length)], round: Math.random() < 0.3
-      };
-    });
-    const start = performance.now();
-    const duration = 2800;
-    const step = (now) => {
-      const t = now - start;
-      ctx.clearRect(0, 0, w, hh);
-      ctx.globalAlpha = t > duration - 700 ? Math.max(0, (duration - t) / 700) : 1;
-      parts.forEach((p) => {
-        p.vy += 0.22; p.vx *= 0.985; p.vy *= 0.985;
-        p.x += p.vx; p.y += p.vy; p.r += p.vr;
-        ctx.save();
-        ctx.translate(p.x, p.y); ctx.rotate(p.r);
-        ctx.fillStyle = p.c;
-        if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.s / 2.4, 0, Math.PI * 2); ctx.fill(); } else ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2);
-        ctx.restore();
-      });
-      if (t < duration) window.requestAnimationFrame(step); else canvas.remove();
-    };
-    window.requestAnimationFrame(step);
-  }
-
   window.EF = Object.freeze({
     h, append, clear, icon, clamp, motionOK,
     config: loadConfig(),
     request, uid, store, format,
     currentTheme, initThemeToggle,
-    onScroll, createScene, reveal, depthScroll, tilt, countUp,
-    toast, dismissToasts, confetti
+    onScroll, reveal, focusScroll, countUp,
+    toast, dismissToasts
   });
 })();

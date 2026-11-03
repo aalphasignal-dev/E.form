@@ -7,7 +7,8 @@
   const QUESTIONS = config.questions;
   const DRAFT_KEY = 'eform.draft';
   const DRAFT_SIG = QUESTIONS.map((q) => q.id + ':' + q.type).join('|');
-  const LETTERS = ['Α', 'Β', 'Γ', 'Δ', 'Ε', 'Ζ', 'Η', 'Θ', 'Ι', 'Κ', 'Λ', 'Μ', 'Ν', 'Ξ', 'Ο', 'Π'];
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const pad2 = (n) => String(n).padStart(2, '0');
 
   const ERRORS = {
     network: 'Δεν ήταν δυνατή η σύνδεση με τον διακομιστή. Ελέγξτε τη σύνδεσή σας στο internet και δοκιμάστε ξανά.',
@@ -20,6 +21,8 @@
     bad_response: 'Ο διακομιστής έδωσε μη αναμενόμενη απάντηση. Ενημερώστε τον διαχειριστή.',
     default: 'Κάτι πήγε στραβά και η απάντηση δεν στάλθηκε. Δοκιμάστε ξανά.'
   };
+
+  const TYPE_LABELS = { choice: 'Επιλογή', multi: 'Πολλαπλή επιλογή', rating: 'Κλίμακα', text: 'Κείμενο', textarea: 'Κείμενο' };
 
   const els = {
     form: document.getElementById('survey'),
@@ -37,36 +40,113 @@
   };
 
   const startedAt = Date.now();
+  const minutes = Math.max(1, Math.round(QUESTIONS.length * 0.35));
   let submissionId = window.EF.uid();
   let sending = false;
 
-  // ─── ΚΕΙΜΕΝΑ ΑΠΟ ΤΟ CONFIG ──────────────────────────────────────────────
+  // ─── ΚΕΙΜΕΝΑ & ΤΑΥΤΟΤΗΤΑ ΑΠΟ ΤΟ CONFIG ─────────────────────────────────
 
   function setText(id, value) {
     const el = document.getElementById(id);
-    if (el && value) el.textContent = value;
+    if (el && value !== undefined && value !== null && value !== '') el.textContent = String(value);
+  }
+
+  /** Μια «χειρόγραφη» γραμμή κάτω από τη λέξη-κλειδί του τίτλου. */
+  function scribble() {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'scribble');
+    svg.setAttribute('viewBox', '0 0 200 12');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', 'M3 8.6C38 3.6 77 3 113 5.4S171 10.6 197 4.2');
+    path.setAttribute('pathLength', '1');
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function paintTitle() {
+    const title = document.getElementById('hero-title');
+    const words = S.title.split(/\s+/).filter(Boolean);
+    clear(title).setAttribute('aria-label', S.title);
+    words.forEach((word, i) => {
+      const inner = h('span', { text: word });
+      inner.style.setProperty('--i', String(i));
+      const mask = h('span', { class: 'w', 'aria-hidden': 'true' }, inner);
+      const isAccent = words.length > 1 && i === words.length - 1;
+      title.append(isAccent ? h('span', { class: 'accent' }, [mask, scribble()]) : mask);
+      if (i < words.length - 1) title.append(' ');
+    });
+  }
+
+  function paintBrand() {
+    document.querySelectorAll('[data-brand-name]').forEach((el) => { el.textContent = S.brand; });
+    if (S.logo) {
+      const mark = document.querySelector('.brand-mark');
+      if (mark) mark.replaceWith(h('img', { class: 'brand-logo', src: S.logo, alt: S.brand }));
+      const name = document.getElementById('brand-name');
+      if (name) name.classList.add('sr-only');
+    }
+    setText('footer-brand', '© ' + new Date().getFullYear() + ' ' + S.brand);
   }
 
   function paintCopy() {
     document.title = S.title + ' · ' + S.brand;
-    setText('brand-name', S.brand);
+    paintBrand();
+    paintTitle();
     setText('hero-eyebrow', S.eyebrow);
     setText('hero-subtitle', S.subtitle);
     setText('success-title', S.successTitle);
     setText('success-text', S.successText);
     els.submitLabel.textContent = S.submitLabel;
-
-    // Ο τίτλος: η τελευταία λέξη με διαβάθμιση χρώματος.
-    const title = document.getElementById('hero-title');
-    const words = S.title.split(' ');
-    const last = words.pop();
-    clear(title).append(words.length ? words.join(' ') + ' ' : '', h('span', { class: 'gradient-text', text: last }));
-
-    const required = QUESTIONS.filter((q) => q.required).length;
-    const minutes = Math.max(1, Math.round(QUESTIONS.length * 0.35));
-    setText('meta-count', QUESTIONS.length + (QUESTIONS.length === 1 ? ' ερώτηση' : ' ερωτήσεις'));
+    setText('meta-count', QUESTIONS.length);
     setText('meta-time', '~' + minutes + ' λεπτ' + (minutes === 1 ? 'ό' : 'ά'));
-    setText('meta-required', required + ' υποχρεωτικ' + (required === 1 ? 'ή' : 'ές'));
+    setText('meta-required', QUESTIONS.filter((q) => q.required).length);
+  }
+
+  // ─── 3D ΑΞΟΝΟΜΕΤΡΙΑ ΣΤΟ HERO (διακοσμητική, aria-hidden) ───────────────
+
+  function sketch(q) {
+    const bar = (width) => { const b = h('span', { class: 'sc-bar' }); b.style.setProperty('width', width); return b; };
+    if (q.type === 'choice' || q.type === 'multi') {
+      return h('div', { class: 'sc-ui' }, [72, 54, 63].map((w, i) => h('div', { class: 'sc-row' }, [
+        h('span', { class: 'sc-dot' + (i === 1 ? ' on' : '') }), bar(w + '%')
+      ])));
+    }
+    if (q.type === 'rating') {
+      return h('div', { class: 'sc-ui' }, h('div', { class: 'sc-scale' }, [0, 1, 2, 3, 4].map((i) => (
+        h('span', { class: 'sc-cell' + (i === 3 ? ' on' : i < 3 ? ' half' : '') })
+      ))));
+    }
+    return h('div', { class: 'sc-ui' }, h('div', { class: 'sc-lines' }, [bar('92%'), bar('78%'), bar('44%')]));
+  }
+
+  function buildStack() {
+    const host = document.getElementById('hero-stack');
+    if (!host || !QUESTIONS.length) return;
+    const items = QUESTIONS.slice(0, 4);
+    const plane = h('div', { class: 'stack-plane' }, [
+      h('div', { class: 'stack-shadow' }),
+      h('span', { class: 'stack-guide g1' }), h('span', { class: 'stack-guide g2' }),
+      h('span', { class: 'stack-guide g3' }), h('span', { class: 'stack-guide g4' })
+    ]);
+    plane.style.setProperty('--depth', String(Math.max(1, items.length - 1)));
+    // Από το πιο «βαθύ» φύλλο προς το πάνω: η ερώτηση 01 είναι στην κορυφή.
+    for (let index = items.length - 1; index >= 0; index--) {
+      const q = items[index];
+      const card = h('div', { class: 'stack-card' + (index === 0 ? ' is-top' : '') }, [
+        h('div', { class: 'sc-head' }, [h('span', { class: 'sc-num', text: pad2(index + 1) }), h('span', { class: 'sc-type', text: TYPE_LABELS[q.type] })]),
+        h('p', { class: 'sc-label', text: q.label }),
+        sketch(q)
+      ]);
+      card.style.setProperty('--i', String(items.length - 1 - index));
+      plane.appendChild(card);
+    }
+    host.appendChild(plane);
+    const caption = document.getElementById('stack-caption');
+    if (caption) {
+      clear(caption).append(h('b', { text: 'Εικ. 1' }), ' — ' + QUESTIONS.length + (QUESTIONS.length === 1 ? ' ερώτηση' : ' ερωτήσεις') + ', ~' + minutes + ' λεπτ' + (minutes === 1 ? 'ό' : 'ά'));
+    }
   }
 
   // ─── ΔΗΜΙΟΥΡΓΙΑ ΠΕΔΙΩΝ ──────────────────────────────────────────────────
@@ -77,27 +157,23 @@
     const errorId = 'q-' + q.id + '-error';
     const describedBy = [q.help ? helpId : '', errorId].filter(Boolean).join(' ');
 
-    const head = h('div', { class: 'q-head' }, [
-      h('span', { class: 'q-num', 'aria-hidden': 'true', text: String(index + 1).padStart(2, '0') }),
-      h('div', { class: 'q-titles' }, [
-        h('h2', { class: 'q-label', id: labelId, text: q.label }),
-        q.help ? h('p', { class: 'q-help', id: helpId, text: q.help }) : null
-      ]),
-      h('span', { class: 'q-badge' + (q.required ? ' is-required' : ''), text: q.required ? 'Υποχρεωτική' : 'Προαιρετική' })
-    ]);
-
     let body;
     if (q.type === 'choice' || q.type === 'multi') body = buildOptions(q, labelId, describedBy);
     else if (q.type === 'rating') body = buildRating(q, labelId, describedBy);
     else body = buildText(q, labelId, describedBy);
 
-    const card = h('div', { class: 'q-card glass reveal' }, [
-      h('div', { class: 'q-glow', 'aria-hidden': 'true' }),
-      head,
-      body,
+    const card = h('div', { class: 'q-card reveal' }, [
+      h('div', { class: 'q-head' }, [
+        h('span', { class: 'q-num', 'aria-hidden': 'true' }, [pad2(index + 1), h('span', { class: 'q-of', text: '/ ' + pad2(QUESTIONS.length) })]),
+        h('span', { class: 'q-badge q-badge-todo', text: q.required ? 'Υποχρεωτική' : 'Προαιρετική' }),
+        h('span', { class: 'q-badge q-badge-done', 'aria-hidden': 'true' }, [icon('check'), 'Απαντήθηκε'])
+      ]),
+      h('h2', { class: 'q-label', id: labelId, text: q.label }),
+      q.help ? h('p', { class: 'q-help', id: helpId, text: q.help }) : null,
+      h('div', { class: 'q-body' }, body),
       h('p', { class: 'q-error', id: errorId }, [icon('alert'), h('span', { class: 'q-error-text' })])
     ]);
-    card.style.setProperty('--delay', (index * 70) + 'ms');
+    card.style.setProperty('--delay', (index * 60) + 'ms');
 
     return h('section', { class: 'q-shell', 'data-qid': q.id, 'data-type': q.type }, card);
   }
@@ -111,34 +187,31 @@
       'aria-describedby': describedBy,
       'aria-required': q.required && !multi ? 'true' : null
     });
-    q.options.forEach((option, i) => {
+    q.options.forEach((option) => {
       group.appendChild(h('label', { class: 'opt' }, [
         h('input', { class: 'opt-input', type: multi ? 'checkbox' : 'radio', name: q.id, value: option }),
         h('span', { class: 'opt-box' }, [
-          h('span', { class: 'opt-key', 'aria-hidden': 'true', text: LETTERS[i] || String(i + 1) }),
-          h('span', { class: 'opt-text', text: option }),
-          h('span', { class: 'opt-check', 'aria-hidden': 'true' }, icon('check'))
+          h('span', { class: 'opt-dot', 'aria-hidden': 'true' }),
+          h('span', { class: 'opt-text', text: option })
         ])
       ]));
     });
     if (multi && q.maxSelections) {
-      const note = h('p', { class: 'q-note', text: 'Έως ' + q.maxSelections + ' επιλογές.' });
-      return h('div', null, [group, note]);
+      return h('div', null, [group, h('p', { class: 'q-note', text: 'Έως ' + q.maxSelections + ' επιλογές.' })]);
     }
     return group;
   }
 
   function buildRating(q, labelId, describedBy) {
-    const count = q.max - q.min + 1;
-    const stars = q.min >= 1 && count <= 5;
     const caption = h('p', { class: 'rating-caption', 'aria-live': 'polite', text: 'Επιλέξτε βαθμολογία' });
     const group = h('div', {
-      class: 'rating ' + (stars ? 'is-stars' : 'is-scale'),
+      class: 'rating',
       role: 'radiogroup',
       'aria-labelledby': labelId,
       'aria-describedby': describedBy,
       'aria-required': q.required ? 'true' : null
     });
+    group.style.setProperty('--n', String(q.max - q.min + 1));
     const labelFor = (value) => q.labels[value - q.min] || '';
 
     for (let v = q.min; v <= q.max; v++) {
@@ -148,22 +221,24 @@
           class: 'rate-input', type: 'radio', name: q.id, value: v,
           'aria-label': v + ' από ' + q.max + (text ? ' — ' + text : '')
         }),
-        stars ? icon('star', 'rate-star') : h('span', { class: 'rate-num', text: String(v) })
+        h('span', { class: 'rate-num', text: String(v) })
       ]));
     }
 
+    // Η επιλεγμένη τιμή γεμίζει· οι μικρότερες παίρνουν απαλό χρώμα (σαν χάρακας).
     const paint = (preview) => {
       const checked = group.querySelector('input:checked');
-      const value = preview || (checked ? Number(checked.value) : 0);
+      const value = checked ? Number(checked.value) : 0;
       group.querySelectorAll('.rate').forEach((el) => {
         const v = Number(el.dataset.value);
-        el.classList.toggle('is-lit', stars ? v <= value : v === value);
-        el.classList.toggle('is-preview', Boolean(preview));
+        el.classList.toggle('is-lit', v === value);
+        el.classList.toggle('is-below', value > 0 && v < value);
       });
-      caption.textContent = value
-        ? value + ' / ' + q.max + (labelFor(value) ? ' · ' + labelFor(value) : '')
+      const shown = preview || value;
+      caption.textContent = shown
+        ? shown + ' / ' + q.max + (labelFor(shown) ? ' · ' + labelFor(shown) : '')
         : 'Επιλέξτε βαθμολογία';
-      caption.classList.toggle('is-set', Boolean(value));
+      caption.classList.toggle('is-set', Boolean(value) && (!preview || preview === value));
     };
     group.addEventListener('pointerover', (e) => {
       const rate = e.target.closest('.rate');
@@ -173,9 +248,10 @@
     group.addEventListener('change', () => paint(0));
     group.paint = paint;
 
-    const ends = q.labels.length >= 2 && !stars
+    const ends = q.labels.length >= 2
       ? h('div', { class: 'rating-ends', 'aria-hidden': 'true' }, [
-        h('span', { text: q.labels[0] }), h('span', { text: q.labels[q.labels.length - 1] })
+        h('span', { text: q.min + ' · ' + q.labels[0] }),
+        h('span', { text: q.labels[q.labels.length - 1] + ' · ' + q.max })
       ])
       : null;
 
@@ -210,13 +286,20 @@
     };
     input.addEventListener('input', update);
     input.update = update;
-    return h('div', { class: 'field' }, [input, h('div', { class: 'field-meta' }, [h('span', { class: 'field-hint', text: multiline ? 'Ελεύθερο κείμενο' : '' }), counter])]);
+    return h('div', { class: 'field' }, [
+      input,
+      h('div', { class: 'field-meta' }, [h('span', { class: 'field-hint', text: multiline ? 'Ελεύθερο κείμενο' : '' }), counter])
+    ]);
   }
 
   // ─── ΑΝΑΓΝΩΣΗ & ΕΛΕΓΧΟΣ ────────────────────────────────────────────────
 
   function fieldsOf(q) {
     return els.form.querySelectorAll('[name="' + CSS.escape(q.id) + '"]');
+  }
+
+  function shellOf(q) {
+    return els.list.querySelector('[data-qid="' + CSS.escape(q.id) + '"]');
   }
 
   function readAnswer(q) {
@@ -239,7 +322,7 @@
   }
 
   function setError(q, message) {
-    const shell = els.list.querySelector('[data-qid="' + CSS.escape(q.id) + '"]');
+    const shell = shellOf(q);
     if (!shell) return;
     shell.classList.toggle('has-error', Boolean(message));
     shell.querySelector('.q-error-text').textContent = message;
@@ -267,10 +350,10 @@
     const done = QUESTIONS.filter((q) => !isEmpty(readAnswer(q))).length;
     const ratio = QUESTIONS.length ? done / QUESTIONS.length : 0;
     els.progressBar.style.setProperty('--progress', ratio.toFixed(3));
-    els.progressText.textContent = done + '/' + QUESTIONS.length;
+    clear(els.progressText).append(h('b', { text: String(done) }), ' / ' + QUESTIONS.length);
     document.documentElement.classList.toggle('is-complete', ratio === 1);
     QUESTIONS.forEach((q) => {
-      const shell = els.list.querySelector('[data-qid="' + CSS.escape(q.id) + '"]');
+      const shell = shellOf(q);
       if (shell) shell.classList.toggle('is-answered', !isEmpty(readAnswer(q)));
     });
   }
@@ -294,14 +377,14 @@
     let restored = false;
     QUESTIONS.forEach((q) => {
       const value = draft.answers[q.id];
-      if (isEmpty(value) || value === undefined || value === null) return;
+      if (value === undefined || value === null || isEmpty(value)) return;
       const values = (Array.isArray(value) ? value : [value]).map(String);
       fieldsOf(q).forEach((f) => {
         if (f.type === 'radio' || f.type === 'checkbox') f.checked = values.indexOf(f.value) !== -1;
         else f.value = String(value).slice(0, q.maxLength || 2000);
         if (typeof f.update === 'function') f.update();
       });
-      const group = els.list.querySelector('[data-qid="' + CSS.escape(q.id) + '"] .rating');
+      const group = shellOf(q) && shellOf(q).querySelector('.rating');
       if (group && group.paint) group.paint(0);
       restored = true;
     });
@@ -331,7 +414,7 @@
 
     const { answers, errors } = collect();
     if (errors.length) {
-      const first = els.list.querySelector('[data-qid="' + CSS.escape(errors[0].id) + '"]');
+      const first = shellOf(errors[0]);
       setStatus(errors.length === 1 ? 'Λείπει 1 υποχρεωτική απάντηση.' : 'Λείπουν ' + errors.length + ' υποχρεωτικές απαντήσεις.', 'error');
       if (first) {
         first.scrollIntoView({ behavior: window.EF.motionOK() ? 'smooth' : 'auto', block: 'center' });
@@ -382,7 +465,6 @@
     window.requestAnimationFrame(() => els.success.classList.add('is-in'));
     els.success.scrollIntoView({ behavior: window.EF.motionOK() ? 'smooth' : 'auto', block: 'center' });
     setTimeout(() => els.success.focus({ preventScroll: true }), 400);
-    window.EF.confetti();
   }
 
   function resetForm() {
@@ -407,8 +489,8 @@
 
   function init() {
     paintCopy();
+    buildStack();
     window.EF.initThemeToggle(document.getElementById('theme-toggle'));
-    window.EF.createScene(document.getElementById('scene'), { layout: 'hero' });
 
     if (!QUESTIONS.length) {
       els.list.appendChild(h('p', { class: 'notice', text: 'Δεν έχουν οριστεί ερωτήσεις στο config.js.' }));
@@ -437,13 +519,12 @@
       if (!first) return;
       first.scrollIntoView({ behavior: window.EF.motionOK() ? 'smooth' : 'auto', block: 'center' });
       const input = first.querySelector('input, textarea');
-      if (input) setTimeout(() => input.focus({ preventScroll: true }), 600);
+      if (input) setTimeout(() => input.focus({ preventScroll: true }), 650);
     });
 
     window.EF.onScroll((s) => document.documentElement.classList.toggle('is-scrolled', s.y > 24));
     window.EF.reveal();
-    window.EF.depthScroll('.q-shell');
-    window.EF.tilt();
+    window.EF.focusScroll('.q-shell');
     document.documentElement.classList.add('is-ready');
   }
 
